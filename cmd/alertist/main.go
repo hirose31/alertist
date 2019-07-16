@@ -10,10 +10,10 @@ import (
 	debug "github.com/visionmedia/go-debug"
 )
 
-var debugf = debug.Debug("fixme")
+var debugf = debug.Debug("alertist")
 
 var (
-	configFile = flag.String("c", "/etc/alertist.yaml", "configuration file")
+	configFile = flag.String("c", "", "configuration file")
 )
 
 func main() {
@@ -33,24 +33,31 @@ Options:
 	fmt.Printf("%#v\n", flag.Args())
 	fmt.Printf("%s\n", *configFile)
 
-	if len(flag.Args()) == 0 {
+	args := flag.Args()
+
+	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "missing command to execute")
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	args := flag.Args()
+	stdout, stderr, code, err := execute(args)
+	if err != nil {
+		fmt.Println("ERR")
+	}
+
+	fmt.Printf("OUT:%s\nERR:%s\nCODE:%d\n", stdout, stderr, code)
+
+}
+
+func execute(args []string) (stdout string, stderr string, code int, err error) {
+	debugf("execute args: %s", args)
 	cmd := exec.Command(args[0], args[1:]...)
 	var out bytes.Buffer
 	var oer bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &oer
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("ERR")
-		fmt.Println(err)
-	}
-	fmt.Printf("STDOUT: %s\n", out.String())
-	fmt.Printf("STDERR: %s\n", oer.String())
-	fmt.Printf("exit with %d\n", cmd.ProcessState.ExitCode())
+	err = cmd.Run()
+
+	return out.String(), oer.String(), cmd.ProcessState.ExitCode(), err
 }
