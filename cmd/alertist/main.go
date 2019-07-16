@@ -2,31 +2,39 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/hirose31/alertist"
 	debug "github.com/visionmedia/go-debug"
 )
 
 var debugf = debug.Debug("alertist")
 
 var (
-	configFile = flag.String("c", "", "configuration file")
+	configFile = flag.String("c", "", "config file")
+	target     = flag.String("t", "default", "target in config file")
 )
 
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
+Version: %s
 Usage:
   %s [OPTIONS] ARGS...
 Options:
 `,
+			alertist.Version,
 			os.Args[0],
 		)
 		flag.PrintDefaults()
@@ -34,11 +42,7 @@ Options:
 
 	flag.Parse()
 
-	fmt.Printf("%#v\n", flag.Args())
-	fmt.Printf("%s\n", *configFile)
-
 	config := loadConfig()
-	_ = config // fixme
 
 	args := flag.Args()
 
@@ -49,12 +53,12 @@ Options:
 	}
 
 	stdout, stderr, code, err := execute(args)
+	debugf("OUT:%s\nERR:%s\nCODE:%d\n", stdout, stderr, code)
 	if err != nil {
-		fmt.Println("ERR")
+		if targetConfig, ok := config[*target]; ok {
+			notify(args, stdout, stderr, code, targetConfig)
+		}
 	}
-
-	fmt.Printf("OUT:%s\nERR:%s\nCODE:%d\n", stdout, stderr, code)
-
 }
 
 func execute(args []string) (stdout string, stderr string, code int, err error) {
@@ -70,9 +74,9 @@ func execute(args []string) (stdout string, stderr string, code int, err error) 
 	return out.String(), oer.String(), cmd.ProcessState.ExitCode(), err
 }
 
-func loadConfig() (config map[string]map[string]string) {
-	config = map[string]map[string]string{}
-	config["default"] = map[string]string{}
+func loadConfig() (config map[string]map[string]interface{}) {
+	config = map[string]map[string]interface{}{}
+	config["default"] = map[string]interface{}{}
 
 	var _configFile string
 
@@ -83,7 +87,7 @@ func loadConfig() (config map[string]map[string]string) {
 		home := user.HomeDir
 		debugf("home: %s", home)
 
-		for _, file := range []string{"_/etc/alertist.yaml", home + "/.alertist.yaml"} {
+		for _, file := range []string{"/etc/alertist.yaml", home + "/.alertist.yaml"} {
 			debugf("exists? %s", file)
 			if _, err := os.Stat(file); err == nil {
 				_configFile = file
@@ -107,4 +111,44 @@ func loadConfig() (config map[string]map[string]string) {
 
 	debugf("config: %s", config)
 	return config
+}
+
+func notify(args []string, stdout string, stderr string, code int, config map[string]interface{}) {
+	debugf("notify config: %s", config)
+
+	if slackConfig, ok := config["slack"]; ok {
+		debugf("notify by slack")
+		type Slack struct {
+			Text      string `json:"text"`
+			Username  string `json:"username"`
+			IconEmoji string `json:"icon_emoji"`
+			Channel   string `json:"channel"`
+		}
+
+		text := fmt.Sprintf(`
+command: %s
+stdout: %s
+stderr: %s
+code: %d
+`,
+			strings.Join(args, " "),
+			stdout,
+			stderr,
+			code,
+		)
+
+		payload, _ := json.Marshal(Slack{
+			"```" + text + "```",
+			"alertist",
+			":mega:",
+			slackConfig.(map[interface{}]interface{})["channel"].(string),
+		})
+		debugf("payload: %s", payload)
+
+		resp, _ := http.PostForm(
+			slackConfig.(map[interface{}]interface{})["hook"].(string),
+			url.Values{"payload": {string(payload)}},
+		)
+		debugf("status code: %d", resp.StatusCode)
+	}
 }
