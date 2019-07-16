@@ -31,7 +31,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, `
 Version: %s
 Usage:
-  %s [OPTIONS] ARGS...
+  %s [OPTIONS] COMMAND ARGS...
 Options:
 `,
 			alertist.Version,
