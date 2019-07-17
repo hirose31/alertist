@@ -53,7 +53,8 @@ Options:
 	}
 
 	stdout, stderr, code, err := execute(args)
-	debugf("OUT:%s\nERR:%s\nCODE:%d\n", stdout, stderr, code)
+	debugf("CODE:%d\n", code)
+	fmt.Printf("STDOUT:\n%s\nSTDERR:\n%s\n", stdout, stderr)
 	if err != nil {
 		if targetConfig, ok := config[*target]; ok {
 			notify(args, stdout, stderr, code, targetConfig)
