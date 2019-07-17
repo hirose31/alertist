@@ -87,7 +87,7 @@ func loadConfig() (config map[string]map[string]interface{}) {
 		home := user.HomeDir
 		debugf("home: %s", home)
 
-		for _, file := range []string{"/etc/alertist.yaml", home + "/.alertist.yaml"} {
+		for _, file := range []string{home + "/.alertist.yaml", "/etc/alertist.yaml"} {
 			debugf("exists? %s", file)
 			if _, err := os.Stat(file); err == nil {
 				_configFile = file
