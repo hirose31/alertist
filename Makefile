@@ -1,32 +1,87 @@
+BIN := alertist
+MAIN = ./cmd/alertist
+VERSION := $$(make -s show-version)
+CURRENT_REVISION := $(shell git rev-parse --short HEAD)
+BUILD_LDFLAGS := "-s -w -X main.revision=$(CURRENT_REVISION)"
+GOBIN ?= $(shell go env GOPATH)/bin
+export GO111MODULE=on
 
-SOURCES = $(shell echo *.go)
-DEBUG_ASSETS := -debug=true
-VERSION = $(shell grep '^const Version' version.go | sed -E 's/.*"([^"]+)"$$/\1/')
+.PHONY: help
+.DEFAULT_GOAL := help
 
-BUILD_OPTS = -ldflags="-s -w"
-DIST := dist
+help:
+	@grep -h -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-all:
-	@echo alertist $(VERSION)
-	@echo $(SOURCES)
+.PHONY: all
+all: clean build ## clean and build
 
-# for test
-alertist: $(SOURCES) cmd/alertist/main.go
-	go build -tags=linux $(BUILD_OPTS) -o $@ cmd/alertist/main.go
+.PHONY: build
+build: ## build
+	go build -ldflags=$(BUILD_LDFLAGS) -o $(BIN) $(MAIN)
 
-build:
-	gox $(BUILD_OPTS) -osarch "linux/amd64 darwin/amd64 windows/amd64 windows/386" -output "$(DIST)/$(VERSION)/alertist-$(VERSION)_{{.OS}}_{{.Arch}}/alertist"
+.PHONY: install
+install: ## install
+	go install -ldflags=$(BUILD_LDFLAGS) $(MAIN)
 
-package: build
-	-@mkdir $(DIST)/$(VERSION)/pkg 2>/dev/null
-	@cd $(DIST)/$(VERSION) && for pkg in alertist-$(VERSION)_*; do \
-	  echo $${pkg}; \
-	  zip pkg/$${pkg}.zip $${pkg}/*; \
-	done
+.PHONY: show-version
+show-version: $(GOBIN)/gobump ## show-version
+	@gobump show -r $(MAIN)
 
-release:
-	$(MAKE) package
-	@env ghr -u hirose31 --replace $(VERSION) $(DIST)/$(VERSION)/pkg/
+$(GOBIN)/gobump:
+	@cd && go get github.com/x-motemen/gobump/cmd/gobump
 
-clean:
-	$(RM) *~ alertist
+$(GOBIN)/ghch:
+	@cd && go get github.com/Songmu/ghch/cmd/ghch
+
+$(GOBIN)/golint:
+	@cd && go get golang.org/x/lint/golint
+
+$(GOBIN)/gosec:
+	@cd && go get github.com/securego/gosec/v2/cmd/gosec
+
+.PHONY: cross
+cross: $(GOBIN)/goxz ## build for cross platforms
+	goxz -arch amd64,arm64 -os linux,darwin -n $(BIN) -pv=v$(VERSION) -build-ldflags=$(BUILD_LDFLAGS) -trimpath $(MAIN)
+	goxz -arch amd64       -os windows      -n $(BIN) -pv=v$(VERSION) -build-ldflags=$(BUILD_LDFLAGS) -trimpath $(MAIN)
+
+$(GOBIN)/goxz:
+	cd && go get github.com/Songmu/goxz/cmd/goxz
+
+.PHONY: test
+test: build ## test
+	go test -v ./...
+
+.PHONY: lint
+lint: $(GOBIN)/golint ## run golint
+	golint -set_exit_status ./...
+
+.PHONY: security
+security: $(GOBIN)/gosec ## run gosec
+	gosec ./...
+
+.PHONY: clean
+clean: ## clean
+	rm -rf $(BIN) goxz
+	go clean
+
+.PHONY: bump
+bump: $(GOBIN)/gobump $(GOBIN)/ghch ## release new version
+ifneq ($(shell git status --porcelain),)
+	$(error git workspace is dirty)
+endif
+ifneq ($(shell git rev-parse --abbrev-ref HEAD),master)
+	$(error current branch is not master)
+endif
+	@gobump up -w $(MAIN)
+	ghch -w -N "v$(VERSION)"
+	git commit -am "bump up version to $(VERSION)"
+	git tag "v$(VERSION)"
+	git push origin master
+	git push origin "refs/tags/v$(VERSION)"
+
+.PHONY: upload
+upload: $(GOBIN)/ghr ## upload
+	ghr "v$(VERSION)" goxz
+
+$(GOBIN)/ghr:
+	cd && go get github.com/tcnksm/ghr

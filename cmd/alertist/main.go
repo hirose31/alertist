@@ -11,19 +11,23 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/hirose31/alertist"
 	debug "github.com/visionmedia/go-debug"
 )
 
+const version = "0.0.1"
+
+var revision = "HEAD"
 var debugf = debug.Debug("alertist")
 
 var (
-	configFile = flag.String("c", "", "config file")
-	target     = flag.String("t", "default", "target in config file")
+	showVersion = flag.Bool("version", false, "print version information")
+	configFile  = flag.String("c", "", "config file")
+	target      = flag.String("t", "default", "target in config file")
 )
 
 func main() {
@@ -34,13 +38,22 @@ Usage:
   %s [OPTIONS] COMMAND ARGS...
 Options:
 `,
-			alertist.Version,
+			version,
 			os.Args[0],
 		)
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf(
+			"alertist %s (rev: %s/%s)\n",
+			version,
+			revision,
+			runtime.Version(),
+		)
+		os.Exit(1)
+	}
 
 	config := loadConfig()
 
