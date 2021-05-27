@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"runtime"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -28,6 +29,7 @@ var (
 	showVersion = flag.Bool("version", false, "print version information")
 	configFile  = flag.String("c", "", "config file")
 	target      = flag.String("t", "default", "target in config file")
+	retry       = flag.Int("r", 1, "number of retries")
 )
 
 func main() {
@@ -65,9 +67,22 @@ Options:
 		os.Exit(1)
 	}
 
-	stdout, stderr, code, err := execute(args)
-	debugf("CODE:%d\n", code)
-	fmt.Printf("STDOUT:\n%s\nSTDERR:\n%s\n", stdout, stderr)
+	var stdout, stderr string
+	var code int
+	var err error
+	for *retry > 0 {
+		stdout, stderr, code, err = execute(args)
+		debugf("CODE:%d\n", code)
+		fmt.Printf("STDOUT:\n%s\nSTDERR:\n%s\n", stdout, stderr)
+
+		if err == nil {
+			break
+		}
+
+		*retry--
+		time.Sleep(7 * time.Second)
+	}
+
 	if err != nil {
 		if targetConfig, ok := config[*target]; ok {
 			notify(args, stdout, stderr, code, targetConfig)
